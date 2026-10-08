@@ -19,9 +19,10 @@ int main() {
     int cmdCount = 1;
     int cmdStart[MAX_CMD]; // store index of start of each command
     
-    // pointer to array of each redirection file
-    char* stdInFiles[MAX_CMD];
-    char* stdOutFiles[MAX_CMD];
+    // pointer to array of each redirection file/corresponding forced variant array
+    char* stdInFiles[MAX_CMD] = {NULL};
+    char* stdOutFiles[MAX_CMD] = {NULL};
+    int forcedOut[MAX_CMD] = {0};
 
     // prompt and store user input, exit on error
     printf("Enter a command: ");
@@ -43,13 +44,16 @@ int main() {
         // store starting index of command
         cmdStart[cmdCount] = tokCount;
         cmdCount++;
-      } else if (strcmp(tok, ">") == 0) { // stdout func.
+      } else if (strcmp(tok, ">") == 0 || strcmp(tok, ">!") == 0) { // stdout func. (normal/forced variant)
+        int forced = (strcmp(tok, ">!") == 0); // track variant, 0 = force var., any other int. = normal var.
+        //printf("forced: %d\n", forced);
         tok = strtok(NULL, " \n"); // end before filename
         if (tok == NULL) {
           perror("No file name input after '>'.\n");
           exit(3);
         }
         stdOutFiles[cmdCount - 1] = tok;
+        forcedOut[cmdCount - 1] = forced;
       } else if (strcmp(tok, "<") == 0) { // stdin func.
         tok = strtok(NULL, " \n");
         if (tok == NULL) {
@@ -117,7 +121,14 @@ int main() {
        
         // stdout func. 
         if (stdOutFiles[i] != NULL) {
-          int fd_rec = open(stdOutFiles[i], O_WRONLY | O_CREAT | O_EXCL, S_IRUSR | S_IWUSR);
+          if (forcedOut[i] != 1) {
+            int fd_rec = open(stdOutFiles[i], O_WRONLY | O_CREAT | O_EXCL, S_IRUSR | S_IWUSR); // O_CREAT and O_EXCL combined check for existing file
+            if (fd_rec < 0) {
+              perror("File exists. Cannot overwrite.\n");
+              exit(10);
+            }
+          }
+          int fd_rec = open(stdOutFiles[i], O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR); // allow overwrite
           dup2(fd_rec, 1);
           close(fd_rec);
         }
@@ -125,13 +136,17 @@ int main() {
         // stdin func.
         if (stdInFiles[i] != NULL) {
           int fd_in = open(stdInFiles[i], O_RDONLY, 0);
+          if (fd_in < 0) {
+            perror("File does not exist. Cannot read.\n");
+            exit(6);
+          }
           dup2(fd_in, 0);
           close(fd_in);
         }
         
         // run command w/ given args, else error
         if (execvp(argv[cmdStart[i]], &argv[cmdStart[i]])) {
-          perror("Unknown command, exec failed.");
+          perror("Unknown command, exec failed.\n");
           exit(2);
         }
         exit(100);
