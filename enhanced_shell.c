@@ -6,13 +6,18 @@
 #include <sys/wait.h>
 #include <fcntl.h>
 
+#define MAX_CHAR 50
 #define MAX_TOK 50
 #define MAX_CMD 50
+#define MAX_HIST 6
 
 int main() {
+  
+  char history[MAX_HIST][MAX_CHAR];
+  int histCount = 0;
 
   while (1) {
-    char user_input[50];
+    char user_input[MAX_CHAR];
     char* argv[MAX_TOK]; // pointer to array of char ptrs
     char* tok;
     int tokCount = 0;
@@ -31,13 +36,37 @@ int main() {
       printf("\nEOF or an error has occured reading from stdin. Exiting...\n");
       break;
     }
+  
+    // redo func.
+    if (user_input[0] == '!') {
+      int num = atoi(user_input + 1); // number after first char (!)
+      
+      if (num < 1) {
+        printf("Cannot redo numbers less than 1.\n");
+        continue;
+      } else if (num > histCount) {
+        printf("Cannot redo numbers greater than 6.\n");
+        continue;
+      }
+     
+      // copy string in history into user_input 
+      strncpy(user_input, history[histCount - num], MAX_CHAR - 1); // MAX_CHAR - 1 for null term.
+      user_input[MAX_CHAR - 1] = '\0';
+      
+      printf("%s\n", user_input);
+    }
+    
+    // must copy string - strtok modifies it.
+    char historyLine[MAX_CHAR];
+    strncpy(historyLine, user_input, MAX_CHAR);
+    historyLine[strcspn(historyLine, "\n")] = '\0'; // remove trailing newline
     
     // parse
     cmdStart[0] = 0;
     tok = strtok(user_input, " \n");
     while (tok != NULL && tokCount < MAX_TOK - 1) { // leave room for NULL (just in case)
       if (strcmp(tok, "|") == 0) {
-
+    
         // append NULL to current argv array when "|" seen
         argv[tokCount] = NULL;
         tokCount++;
@@ -85,7 +114,15 @@ int main() {
       printf("Quitting...\n");
       exit(93);
     }
-
+    
+    // check for "history" command
+    if (cmdCount == 1 && strcmp(argv[0], "history") == 0) {
+      for (int c = histCount, i = 0; c <= histCount && i < histCount; c--, i++) {
+        printf("%d %s\n", c, history[i]);
+      }
+      continue;
+    }
+    
     // append NULL to end of argv
     argv[tokCount] = NULL;
     
@@ -155,21 +192,39 @@ int main() {
           perror("Unknown command, exec failed.\n");
           exit(2);
         }
-        exit(100);
-        }
-      }
-        
-      // close pipes in parent.
-      for (int x = 0; x < cmdCount - 1; x++) {
-        close(fd[x][0]);
-        close(fd[x][1]);
-      }
 
-      // wait for all child process to complete
-      for (int i = 0; i < cmdCount; i++) {
-        int status;
-        wait(&status);
       }
     }
+
+    // close pipes in parent.
+    for (int x = 0; x < cmdCount - 1; x++) {
+      close(fd[x][0]);
+      close(fd[x][1]);
+    }
+
+    // wait for all child process to complete
+    int success = 1; // stays 1 only if every command succeeded
+    for (int i = 0; i < cmdCount; i++) {
+      int status;
+      wait(&status);
+      // if exit status non-zero, not succeeded
+      if (WEXITSTATUS(status) != 0) {
+        success = 0;
+      }
+    }
+
+    // only successful commands are added to history
+    if (success) {
+      if (histCount == MAX_HIST) {
+        // drop oldest then shift down
+        for (int l = 1; l < MAX_HIST; l++) {
+          strncpy(history[l-1], history[l], MAX_CHAR);
+        }
+        histCount--;
+      }
+      strncpy(history[histCount], historyLine, MAX_CHAR);
+      histCount++;
+    }
+  }
   return 0;
 }
