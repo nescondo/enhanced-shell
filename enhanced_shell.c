@@ -18,6 +18,7 @@ int main() {
     int tokCount = 0;
     int cmdCount = 1;
     int cmdStart[MAX_CMD]; // store index of start of each command
+    int afterRedir = 0; // determines if token is currently after a redirection cmd
     
     // pointer to array of each redirection file/corresponding forced variant array
     char* stdInFiles[MAX_CMD] = {NULL};
@@ -44,6 +45,7 @@ int main() {
         // store starting index of command
         cmdStart[cmdCount] = tokCount;
         cmdCount++;
+        afterRedir = 0;
       } else if (strcmp(tok, ">") == 0 || strcmp(tok, ">!") == 0) { // stdout func. (normal/forced variant)
         int forced = (strcmp(tok, ">!") == 0); // track variant, 0 = force var., any other int. = normal var.
         //printf("forced: %d\n", forced);
@@ -54,6 +56,7 @@ int main() {
         }
         stdOutFiles[cmdCount - 1] = tok;
         forcedOut[cmdCount - 1] = forced;
+        afterRedir = 1;
       } else if (strcmp(tok, "<") == 0) { // stdin func.
         tok = strtok(NULL, " \n");
         if (tok == NULL) {
@@ -61,9 +64,12 @@ int main() {
           exit(4);
         }
         stdInFiles[cmdCount - 1] = tok;
+        afterRedir = 1;
       } else {  
-        argv[tokCount] = tok;
-        tokCount++;
+        if (afterRedir == 0) { // add tokens if not after a redirection
+          argv[tokCount] = tok;
+          tokCount++;
+        }
       }
       tok = strtok(NULL, " \n"); // continue after each command "end" within the user_input string
     }
@@ -144,7 +150,7 @@ int main() {
           close(fd_in);
         }
         
-        // run command w/ given args, else error
+        // run command w/ given args
         if (execvp(argv[cmdStart[i]], &argv[cmdStart[i]])) {
           perror("Unknown command, exec failed.\n");
           exit(2);
